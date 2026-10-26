@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PreserveHelper",
-  description: "Une application Next.js avec Tailwind CSS.",
+  title: "Preserve — Éditeur de carte",
+  description: "Créez et explorez votre carte de terrains hexagonaux.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
