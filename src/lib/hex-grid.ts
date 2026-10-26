@@ -5,11 +5,14 @@ export interface AxialCoordinate {
   r: number;
 }
 
+export type TerrainColor = "gray" | "orange" | "green" | "blue";
+export type Elevation = 1 | 2 | 3 | 4;
+
 export interface TerrainTile extends AxialCoordinate {
   id: string;
   terrainId: string;
-  baseColor: "gray" | "orange" | "green" | "blue";
-  elevation: 1 | 2 | 3 | 4;
+  terrainColor: TerrainColor;
+  elevation: Elevation;
   habitat: string | null;
 }
 
@@ -110,7 +113,7 @@ export function createTerrain(
       terrainId: id,
       q,
       r,
-      baseColor: "gray",
+      terrainColor: "gray",
       elevation: 1,
       habitat: null,
     })),

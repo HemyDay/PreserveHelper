@@ -243,12 +243,34 @@ a:focus-visible {
 }
 
 .terrain-tile {
-  fill: #b8bcb4;
+  outline: 0 !important;
+  -webkit-tap-highlight-color: transparent;
   stroke: #f7f8f5;
   stroke-linejoin: round;
   stroke-width: 1.5px;
   vector-effect: non-scaling-stroke;
-  transition: fill 120ms ease;
+  cursor: pointer;
+  transition: filter 120ms ease, stroke 120ms ease, stroke-width 120ms ease;
+}
+
+.terrain-tile:hover {
+  filter: brightness(0.94);
+}
+
+.terrain-tile.is-selected {
+  stroke: #344f3d;
+  stroke-width: 2.8px;
+}
+
+.terrain-tile.is-selected:hover {
+  filter: brightness(0.97);
+}
+
+.terrain-tile:focus,
+.terrain-tile:focus-visible {
+  outline: 0 !important;
+  stroke: #314d3a;
+  stroke-width: 3px;
 }
 
 .terrain-preview .terrain-tile {
@@ -261,6 +283,142 @@ a:focus-visible {
 .terrain-preview.terrain-ghost .terrain-tile {
   fill: #b8c8b8;
   stroke-dasharray: 2 2;
+}
+
+.tile-popover {
+  position: fixed;
+  z-index: 4;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  padding: 11px;
+  border: 1px solid #e7eae4;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 30px rgb(39 46 36 / 14%), 0 1px 4px rgb(39 46 36 / 6%);
+  color: #454b42;
+  animation: dialog-in 130ms ease-out both;
+}
+
+.tile-action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 38px);
+  gap: 8px;
+}
+
+.tile-action-button {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid #e7eae4;
+  border-radius: 50%;
+  background: #fff;
+  color: #596254;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.tile-action-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: #bdcbbd;
+  background: #f4f7f2;
+  color: #355640;
+}
+
+.tile-action-button svg,
+.tile-back-button svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 1.7;
+}
+
+.tile-action-button.is-disabled,
+.tile-action-button:disabled {
+  border-color: #f0f1ee;
+  background: #fafbf9;
+  color: #c0c4bc;
+  cursor: not-allowed;
+}
+
+.tile-submenu-header {
+  display: flex;
+  min-width: 171px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 11px;
+  color: #52594f;
+  font-size: 11px;
+  font-weight: 570;
+}
+
+.tile-back-button {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
+  place-items: center;
+  border: 1px solid #e8ebe5;
+  border-radius: 50%;
+  background: #fff;
+  color: #6d7469;
+  cursor: pointer;
+}
+
+.tile-back-button:hover {
+  border-color: #cbd5c9;
+  background: #f6f8f4;
+  color: #355640;
+}
+
+.tile-back-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tile-choice-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px 4px;
+}
+
+.tile-color-choice,
+.tile-elevation-choice {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #e0e4dc;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.tile-color-choice {
+  background: var(--swatch);
+}
+
+.tile-elevation-choice {
+  background: #f5f6f3;
+  color: #555d50;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tile-color-choice:hover,
+.tile-elevation-choice:hover {
+  transform: translateY(-1px);
+}
+
+.tile-color-choice.is-selected,
+.tile-elevation-choice.is-selected {
+  box-shadow: 0 0 0 2px #49694f;
+}
+
+.tile-elevation-choice.is-selected {
+  background: #edf3eb;
+  color: #355640;
 }
 
 .map-caption {

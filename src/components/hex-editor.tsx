@@ -4,20 +4,27 @@ import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type WheelEvent as ReactWheelEvent,
 } from "react";
 import Link from "next/link";
+import TilePopover, { type TilePopoverMode } from "@/components/tile-popover";
 import {
   createTerrain,
   generateTerrainCoordinates,
   getNeighborPositions,
   isValidTerrainPlacement,
   type AxialCoordinate,
+  type Elevation,
   type Terrain,
+  type TerrainColor,
   type TerrainStatus,
+  type TerrainTile,
 } from "@/lib/hex-grid";
+import { getTileColor } from "@/lib/terrain-palette";
+import { resetTile, setTileColor, setTileElevation } from "@/lib/terrain-tiles";
 
 const TILE_SIZE = 27;
 const MAX_ZOOM = 2;
@@ -43,6 +50,19 @@ interface PixelCoordinate {
 interface Placement {
   status: TerrainStatus;
   position: AxialCoordinate | null;
+}
+
+interface SelectedTile {
+  terrainId: string;
+  tileId: string;
+}
+
+interface DragOrigin {
+  x: number;
+  y: number;
+  panX: number;
+  panY: number;
+  isDragging: boolean;
 }
 
 const initialTerrain = createTerrain("terrain-initial", { q: 0, r: 0 }, "definitive");
@@ -132,10 +152,16 @@ function MapIcon({ kind }: { kind: "center" | "close" }) {
 
 export default function HexEditor() {
   const svgRef = useRef<SVGSVGElement>(null);
-  const dragOrigin = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const dragOrigin = useRef<DragOrigin | null>(null);
+  const suppressClick = useRef(false);
+  const pointerDownTile = useRef<SelectedTile | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
   const [terrains, setTerrains] = useState<Terrain[]>([initialTerrain]);
   const [placement, setPlacement] = useState<Placement | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [selectedTile, setSelectedTile] = useState<SelectedTile | null>(null);
+  const [popoverMode, setPopoverMode] = useState<TilePopoverMode>("actions");
+  const [popoverPosition, setPopoverPosition] = useState({ left: 0, top: 0 });
   const [viewport, setViewport] = useState<Viewport>({ width: 1280, height: 720 });
   const [view, setView] = useState<ViewTransform>({ x: 0, y: 0, zoom: 1 });
 
@@ -154,16 +180,66 @@ export default function HexEditor() {
   }, []);
 
   useEffect(() => {
-    if (!placement && !isAddDialogOpen) return;
+    if (!placement && !isAddDialogOpen && !selectedTile) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setPlacement(null);
         setIsAddDialogOpen(false);
+        setSelectedTile(null);
+        setPopoverMode("actions");
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isAddDialogOpen, placement]);
+  }, [isAddDialogOpen, placement, selectedTile]);
+
+  const selectedTileData: TerrainTile | null = selectedTile
+    ? terrains
+        .find((terrain) => terrain.id === selectedTile.terrainId)
+        ?.tiles.find((tile) => tile.id === selectedTile.tileId) ?? null
+    : null;
+
+  const repositionPopover = useCallback(() => {
+    const svg = svgRef.current;
+    const popover = popoverRef.current;
+    if (!svg || !popover || !selectedTileData) return;
+
+    const svgBounds = svg.getBoundingClientRect();
+    const pixel = axialToPixel(selectedTileData);
+    const anchorX = svgBounds.left + svgBounds.width / 2 + (view.x + pixel.x * view.zoom);
+    const anchorY = svgBounds.top + svgBounds.height / 2 + (view.y + pixel.y * view.zoom);
+    const popoverBounds = popover.getBoundingClientRect();
+    const margin = 12;
+    const left = Math.max(
+      margin,
+      Math.min(window.innerWidth - popoverBounds.width - margin, anchorX - popoverBounds.width / 2),
+    );
+    const preferredTop = anchorY - popoverBounds.height - 14;
+    const top = Math.max(
+      margin,
+      Math.min(
+        window.innerHeight - popoverBounds.height - margin,
+        preferredTop >= margin ? preferredTop : anchorY + 14,
+      ),
+    );
+    setPopoverPosition((current) =>
+      current.left === left && current.top === top ? current : { left, top },
+    );
+  }, [selectedTileData, view]);
+
+  useLayoutEffect(() => {
+    repositionPopover();
+  }, [popoverMode, repositionPopover, viewport]);
+
+  useEffect(() => {
+    if (!selectedTileData) return;
+    window.addEventListener("resize", repositionPopover);
+    window.addEventListener("scroll", repositionPopover, true);
+    return () => {
+      window.removeEventListener("resize", repositionPopover);
+      window.removeEventListener("scroll", repositionPopover, true);
+    };
+  }, [repositionPopover, selectedTileData]);
 
   const closePlacementDialog = useCallback(() => {
     setIsAddDialogOpen(false);
@@ -201,12 +277,19 @@ export default function HexEditor() {
       updatePlacement(event);
       return;
     }
+    const target = event.target instanceof Element
+      ? event.target.closest<SVGPolygonElement>("[data-tile-id]")
+      : null;
+    pointerDownTile.current = target?.dataset.terrainId && target.dataset.tileId
+      ? { terrainId: target.dataset.terrainId, tileId: target.dataset.tileId }
+      : null;
     if (event.button !== 0) return;
     dragOrigin.current = {
       x: event.clientX,
       y: event.clientY,
       panX: view.x,
       panY: view.y,
+      isDragging: false,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
@@ -214,10 +297,18 @@ export default function HexEditor() {
   function handlePointerMove(event: ReactPointerEvent<SVGSVGElement>) {
     if (dragOrigin.current) {
       const drag = dragOrigin.current;
+      const deltaX = event.clientX - drag.x;
+      const deltaY = event.clientY - drag.y;
+      if (!drag.isDragging && Math.hypot(deltaX, deltaY) < 4) return;
+      if (!drag.isDragging) {
+        drag.isDragging = true;
+        suppressClick.current = true;
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
       setView((current) => ({
         ...current,
-        x: drag.panX + event.clientX - drag.x,
-        y: drag.panY + event.clientY - drag.y,
+        x: drag.panX + deltaX,
+        y: drag.panY + deltaY,
       }));
       return;
     }
@@ -226,10 +317,41 @@ export default function HexEditor() {
 
   function handlePointerUp() {
     dragOrigin.current = null;
+    if (suppressClick.current) {
+      window.setTimeout(() => {
+        suppressClick.current = false;
+        pointerDownTile.current = null;
+      }, 0);
+    } else {
+      window.setTimeout(() => {
+        pointerDownTile.current = null;
+      }, 0);
+    }
   }
 
   function handleMapClick(event: ReactPointerEvent<SVGSVGElement>) {
-    if (!placement) return;
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    if (!placement) {
+      const target = event.target instanceof Element
+        ? event.target.closest<SVGPolygonElement>("[data-tile-id]")
+        : null;
+      const terrainId = target?.dataset.terrainId ?? pointerDownTile.current?.terrainId;
+      const tileId = target?.dataset.tileId ?? pointerDownTile.current?.tileId;
+      pointerDownTile.current = null;
+      if (terrainId && tileId) {
+        setSelectedTile({ terrainId, tileId });
+        setPopoverMode("actions");
+      } else {
+        setSelectedTile(null);
+        setPopoverMode("actions");
+      }
+      return;
+    }
+
+    setSelectedTile(null);
     const point = getMapPoint(event);
     const target = findPlacementTarget(point.x, point.y, terrains);
     if (!target || !isValidTerrainPlacement(target, terrains)) return;
@@ -277,6 +399,39 @@ export default function HexEditor() {
     });
   }
 
+  function updateSelectedTile(
+    update: (current: Terrain[], tile: TerrainTile) => Terrain[],
+  ) {
+    if (!selectedTile || !selectedTileData) return;
+    setTerrains((current) =>
+      update(current, selectedTileData),
+    );
+  }
+
+  function chooseTileColor(color: TerrainColor) {
+    updateSelectedTile((current, tile) =>
+      setTileColor(current, tile.terrainId, tile.id, color),
+    );
+    setSelectedTile(null);
+    setPopoverMode("actions");
+  }
+
+  function chooseTileElevation(elevation: Elevation) {
+    updateSelectedTile((current, tile) =>
+      setTileElevation(current, tile.terrainId, tile.id, elevation),
+    );
+    setSelectedTile(null);
+    setPopoverMode("actions");
+  }
+
+  function resetSelectedTile() {
+    updateSelectedTile((current, tile) =>
+      resetTile(current, tile.terrainId, tile.id),
+    );
+    setSelectedTile(null);
+    setPopoverMode("actions");
+  }
+
   const preview = placement?.position
     ? createTerrain("terrain-preview", placement.position, placement.status)
     : null;
@@ -296,7 +451,13 @@ export default function HexEditor() {
 
         <div className="toolbar-divider" />
 
-        <button className="tool-button tool-button-primary" onClick={() => setIsAddDialogOpen(true)}>
+        <button
+          className="tool-button tool-button-primary"
+          onClick={() => {
+            setSelectedTile(null);
+            setIsAddDialogOpen(true);
+          }}
+        >
           <span className="button-plus" aria-hidden="true">+</span>
           Ajouter du terrain
         </button>
@@ -335,7 +496,7 @@ export default function HexEditor() {
           }}
           onClick={handleMapClick}
           onWheel={handleWheel}
-          role="img"
+          role="group"
           aria-label={`${terrains.length} terrain${terrains.length > 1 ? "s" : ""} sur la carte`}
         >
           <defs>
@@ -357,7 +518,20 @@ export default function HexEditor() {
                     <polygon
                       key={tile.id}
                       points={hexPoints(pixel.x, pixel.y)}
-                      className="terrain-tile"
+                      className={`terrain-tile${selectedTile?.tileId === tile.id ? " is-selected" : ""}`}
+                      style={{ fill: getTileColor(tile.terrainColor, tile.elevation) }}
+                      data-tile-id={tile.id}
+                      data-terrain-id={terrain.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-pressed={selectedTile?.tileId === tile.id}
+                      aria-label={`Tuile ${tile.terrainColor}, élévation ${tile.elevation}`}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
+                        setSelectedTile({ terrainId: terrain.id, tileId: tile.id });
+                        setPopoverMode("actions");
+                      }}
                     />
                   );
                 })}
@@ -395,6 +569,21 @@ export default function HexEditor() {
         </div>
         <p className="map-tip">Glisser pour déplacer <span>·</span> Molette pour zoomer</p>
       </section>
+
+      {selectedTileData && (
+        <TilePopover
+          tile={selectedTileData}
+          mode={popoverMode}
+          position={popoverPosition}
+          onModeChange={setPopoverMode}
+          onColorSelect={chooseTileColor}
+          onElevationSelect={chooseTileElevation}
+          onReset={resetSelectedTile}
+          popoverRef={(node) => {
+            popoverRef.current = node;
+          }}
+        />
+      )}
 
       {isAddDialogOpen && (
         <div

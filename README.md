@@ -1,8 +1,9 @@
 # Preserve — Éditeur de carte hexagonale
 
 Éditeur web de cartes hexagonales construit avec Next.js, React, TypeScript et SVG.
-Cette première étape couvre la structure des terrains de 19 tuiles, leur placement
-définitif ou fantôme, ainsi que le déplacement et le zoom de la carte.
+Les terrains de 19 tuiles peuvent être placés en mode définitif ou fantôme. Chaque
+tuile peut être sélectionnée pour modifier individuellement sa couleur et son
+élévation ; la carte peut être déplacée, zoomée et recentrée.
 
 ## Lancer en développement
 
